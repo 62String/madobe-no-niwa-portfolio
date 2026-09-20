@@ -2,15 +2,15 @@
 
 [READMEへ戻る](../README.md)
 
-収穫・枯死／復活・植物図鑑・保存処理について、掲載コードから読み取れる処理順と条件を整理した資料です。ゲーム全体の仕様書ではなく、担当機能を理解するための技術資料として構成しています。
+収穫・枯死／復活・植物図鑑・ギャラリー・保存処理について、掲載コードから読み取れる処理順と条件を整理した資料です。ゲーム全体の仕様書ではなく、担当機能を理解するための技術資料として構成しています。
 
 | 対象 | 基準 |
 | --- | --- |
-| 対象コード | 担当機能に関連するC#スクリプト8ファイル |
+| 対象コード | 担当機能に関連する18ファイル（C#スクリプト17・シェーダー1） |
 | 想定読者 | 採用担当者・Unityエンジニア |
 | 記載方針 | 実装済みの挙動と改善候補を区別。Inspectorの設定が不明な値はコード上の初期値として記載 |
 
-**目次：** [収穫](#harvest) / [枯死・復活](#revive) / [図鑑](#encyclopedia) / [保存・復元](#save-load) / [改善事例](#improvements) / [担当範囲](#contributions)
+**目次：** [収穫](#harvest) / [枯死・復活](#revive) / [図鑑](#encyclopedia) / [ギャラリー](#gallery) / [保存・復元](#save-load) / [改善事例](#improvements) / [担当範囲](#contributions)
 
 <a id="harvest"></a>
 ## 1. 収穫：確定操作から保存まで
@@ -147,8 +147,112 @@ flowchart TD
 
 **設計上の分離：** 名前や画像は植物定義、世代や収穫時刻はプレイ履歴に持たせています。カードと詳細画面は両者を組み合わせて表示する役割です。現在のページ更新は再生成方式であり、オブジェクトプールは導入していません。
 
+<a id="gallery"></a>
+## 4. ギャラリー：収穫した植物を飾る
+
+**目的：** 収穫済みの植物を保管トレイから取り出して棚へ配置し、再入場後も飾った状態を維持する。
+
+### コードの役割
+
+| コード | 責務 |
+| --- | --- |
+| [GalleryPlacementController.cs](../Scripts/Gallery/GalleryPlacementController.cs) | 収穫済み植物の生成、空きスロット探索、配置・復元、保存用状態の更新 |
+| [GalleryPlantDragItem.cs](../Scripts/Gallery/GalleryPlantDragItem.cs) | ドラッグ方向の判定、スクロールへの受け渡し、表示倍率・基準位置の切り替え |
+| [GalleryPlacementSlot.cs](../Scripts/Gallery/GalleryPlacementSlot.cs) | スロット番号と配置ガイドの表示 |
+| [GalleryEditModeController.cs](../Scripts/Gallery/GalleryEditModeController.cs) | 編集モード、保管トレイ、シーンスワイプの切り替え、編集終了時の保存 |
+| [GallerySwipeController.cs](../Scripts/Gallery/GallerySwipeController.cs) | Input Systemによる横スワイプ判定とシーン移動要求 |
+| [UIInputBlocker.cs](../Scripts/Gallery/UIInputBlocker.cs) | 表示中のUIに応じてシーンスワイプを抑止 |
+| [GallerySceneController.cs](../Scripts/Gallery/GallerySceneController.cs) | 移動先・方向の指定、遷移の多重開始防止 |
+| [GalleryTransitionController.cs](../Scripts/Gallery/GalleryTransitionController.cs) | 非同期シーン読込、画面キャプチャ、スライドとフェードの進行 |
+| [GalleryTransitionTarget.cs](../Scripts/Gallery/GalleryTransitionTarget.cs) | 遷移演出で移動する画面ルートの指定 |
+| [DirectionalUIFade.shader](../Shaders/DirectionalUIFade.shader) | 方向と進行度に応じた黒いグラデーションのアルファ計算 |
+
+### 現在の配置フロー
+
+```mermaid
+flowchart TD
+    A["入場・保存状態の読込後"] --> B["収穫済みの植物を生成<br/>IDごとに配置状態を取得"]
+    B --> C{"保存済みスロットが<br/>有効かつ空いている？"}
+    C -->|配置済み・有効| D["該当スロットへ復元"]
+    C -->|未配置・無効| E["保管トレイへ表示"]
+    D --> F["編集モードでドラッグ"]
+    E --> F
+    F --> G{"部屋内にドロップ？"}
+    G -->|いいえ| E2["保管トレイへ戻す<br/>isPlaced=false / slotIndex=-1"]
+    G -->|はい| H{"近くに空きスロットあり？"}
+    H -->|いいえ| I["元のスロットまたはトレイへ戻す"]
+    H -->|はい| J["最寄りのスロットへ配置<br/>isPlaced=true<br/>slotIndexを更新"]
+    E2 --> K["保存用の配置状態を更新<br/>SaveManager"]
+    J --> K
+    K --> L["編集モード終了時にSave<br/>JSONへ書き出す"]
+```
+
+生成対象は収穫回数分ではなく、`HasHarvestRecord(plantId)` を満たす植物定義です。表示画像には最後の有効な成長段階のスプライトを使います。`Start()` では1フレーム待ってからスロットを構成し、植物を生成します。
+
+スロット番号は `placementSlotsRoot` の子順から割り当てます。ドロップ位置を部屋のローカル座標へ変換し、`slotSnapDistance` 内で最も近い空きスロットを選びます。配置先の子に付け替え、中央アンカー・`anchoredPosition = Vector2.zero` に合わせるため、現在の方式は自由座標配置ではありません。
+
+> `SetGalleryPlantState()` はメモリ上の状態更新です。ドロップのたびにファイルを書き込むのではなく、編集モード終了時などの `Save()` で永続化します。
+
+### 自由配置から固定スロットへの変更
+
+| 段階・根拠 | 本人が実装した内容 |
+| --- | --- |
+| 7月23日 `6267616` / `f8336c7` | 配置保存モデルと取得・更新API、スワイプ・配置・ドラッグの骨格を追加 |
+| 7月25日 `0ba0fdd` | 部屋内のドロップ位置を `Mathf.InverseLerp` で0〜1へ正規化し、`normalizedX/Y` を保存。再入場時はアンカー座標へ戻す自由配置を実装 |
+| 8月5日 `8976c5f` | 固定スロットへ変更。`slotIndex` を追加し、空き判定・スナップ・配置ガイド・無効ドロップ時の復帰・保存復元を実装 |
+| 8月6日 `914fc9a` | トレイの横スクロールと上方向の取り出しを分離。シーン側にViewportのマスクとContent Size Fitterを設定 |
+| 8月28日 `8f8172c` | 成長段階別の正規化倍率をギャラリーへ適用し、トレイと配置状態の倍率を分離 |
+| 9月5日 `311811e` / 9月6日 `f757bd1` | Native Sizeと鉢の下端基準で表示を補正。ギャラリー専用倍率を植物定義に追加 |
+
+**仕様変更前の自由配置と、変更後のスロット配置の両方を本人が担当しています。** コミットには方式変更が明記されていますが、その判断に至った企画上の理由までは推測して記載しません。
+
+旧フィールドの `normalizedX/Y`、`listOrder`、`sortingOrder` は保存モデルに残っています。ただし現在の位置復元は `slotIndex` を使用し、保存順によるカードの並べ替えや前後関係の復元は行っていません。旧座標をスロットへ自動変換する移行処理もなく、無効なスロット情報は未配置へ戻します。スロットの子順を変えると番号の意味も変わる点が、現在の保存方式の制約です。
+
+### タッチ操作と見た目の分離
+
+| 操作・状態 | 掲載コードの挙動 |
+| --- | --- |
+| トレイ上で左右にドラッグ | Content幅がViewport幅を超える場合のみScrollRectへ転送。カード枚数を固定値で判定しない |
+| トレイ上で上方向にドラッグ | 植物配置モードへ切り替え、スクロールの慣性を停止 |
+| トレイ上で下方向にドラッグ | 植物の取り出しを開始しない |
+| 配置済みの植物をドラッグ | 編集中は方向にかかわらず植物を移動 |
+| 編集中 | シーン切替用スワイプを無効化し、空きスロットのガイドを表示 |
+| トレイ内の画像 | 中央ピボットでカード内に配置 |
+| 棚へ置いた画像 | 下端中央ピボットとYオフセットで鉢の接地位置を調整 |
+
+表示倍率は `galleryBaseScale × 植物別倍率 × 配置状態別倍率` です。植物別倍率には `PlantData.galleryVisualScaleOverride` が正ならそれを使い、未指定なら `GetGrowthStageVisualScale()` を使います。元の正規化倍率の基盤はチームメンバーが実装し、本人がギャラリーへの適用と専用補正を担当しました。
+
+### シーン遷移と担当の境界
+
+```mermaid
+sequenceDiagram
+    participant U as スワイプ入力
+    participant S as GallerySceneController
+    participant T as GalleryTransitionController
+    participant L as SceneManager
+    participant B as BackgroundSkyController
+    U->>S: OpenGallery / ReturnToMain
+    S->>T: 遷移Prefabを生成・方向を指定
+    T->>L: 非同期読込を開始・有効化を保留
+    T->>T: フレーム描画後に出発画面をキャプチャ
+    T->>L: 読込待ち・シーンを有効化
+    T->>T: 1フレーム待つ
+    T->>B: ApplyWeatherBeforeReveal
+    alt 移動対象ルートあり
+        T->>T: 出発画像と到着ルートをスライド
+    else 対象ルートなし
+        T->>T: 到着画面もキャプチャしてスライド
+    end
+    Note over T: 移動と方向性グラデーションを進行
+    T->>T: 画像・実行時Materialを解放
+```
+
+本人は `723c953` で遷移制御を新規作成し、`1531e50`・`5f175f8` で演出を改修しました。`5f175f8` では方向性フェード用シェーダーも追加し、画面キャプチャと表示タイミングを調整しています。
+
+掲載版にはその後のチーム改善も含みます。`adeb875` ではキャプチャキャッシュの利用、出発・到着それぞれのフェード、移動タイミングとシェーダーが拡張されました。`5b5191a` ではキャッシュ経路を削除し、現在の出発画面を撮り直して、到着画面の公開前に天気を反映する流れへ変更されています。**上図は本人の初期版だけでなく、チーム改善後の掲載版のフローです。**
+
 <a id="save-load"></a>
-## 4. 保存・復元：複数機能の状態を集約
+## 5. 保存・復元：複数機能の状態を集約
 
 コード：[SaveManager.cs](../Scripts/SaveLoad/SaveManager.cs) / [SaveData.cs](../Scripts/SaveLoad/SaveData.cs)
 
@@ -197,7 +301,7 @@ flowchart TD
 | 所持品 | `seeds`, `items` | 種・アイテムの所持状態 |
 | 回生状態 | `firstReviveUsed` | 初回回生の使用有無 |
 | 収穫記録 | `harvestRecords` | 図鑑の開放・件数・詳細表示 |
-| 配置情報 | `galleryPlants` | ギャラリーの配置・順序。表示処理は今回未掲載 |
+| 配置情報 | `galleryPlants` | 植物ID・配置状態・`slotIndex`。表示と復元は[ギャラリー](#gallery)参照 |
 | 時刻 | `lastSavedUtcTicks` | 保存時点を記録 |
 | その他の連携 | `weatherState`, 出席報酬フィールド, `notificationState` | チームの関連機能の状態保存 |
 
@@ -215,7 +319,7 @@ flowchart TD
 > `SaveFileStore`・`SaveSafetyChecks` による安定化は別途作業中で、掲載版には含みません。特定ユーザーのデータ消失について、これらのリスクが実際の発生原因だったと断定するものではありません。
 
 <a id="improvements"></a>
-## 5. 改善事例と検証範囲
+## 6. 改善事例と検証範囲
 
 ### 事例A：2回目の収穫で確認ボタンが押せない
 
@@ -262,16 +366,16 @@ private const string SaveFileName = "save_release.json";
 
 | 項目 | 確認状況 |
 | --- | --- |
-| 処理順・条件 | 掲載8ファイルを読んでフローと照合 |
+| 処理順・条件 | 掲載18ファイル（C#17・シェーダー1）を読んでフローと照合 |
 | 本人・チームの担当区分 | 元プロジェクトのコミット履歴とdiffを確認 |
 | コードの同一性 | 同一コミットから抜粋。`DeathController.cs` は末尾改行のみ追加 |
 | 単体コンパイル・実機動作 | この抜粋レポでは未実施。共通コードとシーンを同梱していないため単体実行不可 |
 | 保存安定化の検証結果 | 掲載版の結果には含めない |
 
 <a id="contributions"></a>
-## 6. 初期実装と機能拡張の担当範囲
+## 7. 初期実装と機能拡張の担当範囲
 
-**本資料で扱う収穫・枯死／復活・植物図鑑・保存／復元は、本人が主担当として機能設計・初期実装を行い、その後も拡張してきた機能です。** 既存機能の一部修正だけを担当したものではありません。チームメンバーによる後続の機能連携・改善は、以下で分けて記載します。
+**本資料で扱う収穫・枯死／復活・植物図鑑・ギャラリー・保存／復元は、本人が主担当として機能設計・初期実装を行い、その後も拡張してきた機能です。** 既存機能の一部修正だけを担当したものではありません。チームメンバーによる後続の機能連携・改善は、以下で分けて記載します。
 
 ### 本人による初期実装の根拠
 
@@ -284,6 +388,11 @@ private const string SaveFileName = "save_release.json";
 | `SaveData.cs` | `817aa89` | 植物状態、種、アイテム、保存時刻をまとめるシリアライズ用モデルを新規作成 |
 | `HarvestPopupUI.cs` | `a363d54` | 植物情報を表示する収穫ポップアップ、当時の特性選択処理を新規実装 |
 | `DeathController.cs` | `03c5656` | 枯死イベントと表示制御を接続するコントローラーを新規実装 |
+| `GalleryPlacementController.cs`, `GalleryPlantDragItem.cs`, `GallerySwipeController.cs` | `f8336c7` | 配置・ドラッグ・スワイプの骨格を新規作成。`0ba0fdd` でGalleryフォルダーへ移動し、自由配置・保存・シーン連携を実装 |
+| `GalleryEditModeController.cs`, `GallerySceneController.cs`, `UIInputBlocker.cs` | `0ba0fdd` | 編集モード、シーン移動、UI状態に応じたスワイプ抑止を新規実装 |
+| `GalleryPlacementSlot.cs` | `8976c5f` | 固定スロットの番号とガイドを新規実装 |
+| `GalleryTransitionController.cs`, `GalleryTransitionTarget.cs` | `723c953` | シーン遷移演出の制御と移動対象ルートを新規実装 |
+| `DirectionalUIFade.shader` | `5f175f8` | 方向性フェード用シェーダーを新規実装 |
 
 ### 本人による主な機能拡張
 
@@ -292,6 +401,8 @@ private const string SaveFileName = "save_release.json";
 | 収穫 | 次世代の種付与から空の鉢への遷移、収穫記録、図鑑への移動演出 | `70d4428` / `bf32fff` / `86f500e` |
 | 枯死・復活 | 応急キット・購入による復活分岐、初回回生イベントと保存連携 | `b35691e` / `5a2a634` |
 | 植物図鑑 | タブ・ページ境界、動的カード生成、詳細表示、収穫履歴による抽出・件数表示 | `4cf791b` / `0456e49` / `c0bc927` / `7554944` / `4727b49` |
+| ギャラリー配置 | 自由配置から固定スロットへ変更、ドラッグとスクロールの分離、表示倍率・下端位置の調整 | `0ba0fdd` / `8976c5f` / `914fc9a` / `8f8172c` / `311811e` / `f757bd1` |
+| ギャラリー遷移 | スライド・方向性フェード、キャプチャと表示タイミングの調整 | `723c953` / `1531e50` / `5f175f8` |
 | 保存・復元 | 回生・収穫・配置情報の保存、実行中データの初期化、デモ／リリース分離 | `5a2a634` / `bf32fff` / `6267616` / `0fe7dca` / `a8bde20` |
 
 ### チームメンバーによる後続の追加・改善
@@ -304,6 +415,9 @@ private const string SaveFileName = "save_release.json";
 | `CollectionUI.cs` | 種一覧の接続、道具タブ、ポップアップ演出、タブ表示調整 |
 | `SaveManager.cs` | 出席報酬・天気の保存連携、インベントリ取得・シーン間維持処理の一部 |
 | `SaveData.cs` | 出席報酬・天気の保存フィールド |
+| `GallerySceneController.cs`, `GalleryTransitionController.cs` | `adeb875` のキャッシュ・フェード・移動タイミング拡張、`5b5191a` のキャッシュ削除と天気反映後の表示処理 |
+| `DirectionalUIFade.shader` | `adeb875` のエフェクトモード・グラデーション計算の拡張 |
+| `PlantData`（依存コード・未掲載） | `34a3f26` の成長段階別正規化倍率。本人は後にギャラリー適用と専用倍率を追加 |
 
 上記は担当機能の実装履歴を示すものであり、依存するゲーム基盤や素材を含めた作品全体の単独制作を意味するものではありません。
 
@@ -314,6 +428,7 @@ private const string SaveFileName = "save_release.json";
 | `GameManager`, `PlantManager` | 定義データ取得、植物状態、枯死通知、復活・除去 |
 | 種・アイテムのインベントリ | 種の付与、所持判定、消費・支払い、保存リスト |
 | `PlantData`, `PlantState`, `PlantView` | 植物の定義・状態・描画 |
+| `BackgroundSkyController` | シーン遷移で到着画面を表示する前の天気反映 |
 | イベント・通知システム | 初回回生イベント、収穫後の通知スケジュール連携 |
 | シーン・Prefab・共通UI | Inspector参照、画面配置、ポップアップの表示制御 |
 
@@ -321,4 +436,4 @@ private const string SaveFileName = "save_release.json";
 
 ### ソースの基準情報
 
-掲載した8ファイルは、元プロジェクトのコミット `a8bde20` を基準に抜粋しています。
+掲載した18ファイル（C#スクリプト17・シェーダー1）は、元プロジェクトのコミット `a8bde20` を基準に抜粋しています。ギャラリー関連の追加10ファイルは同コミットとバイト単位で同一です。
