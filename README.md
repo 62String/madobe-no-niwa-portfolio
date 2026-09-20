@@ -10,7 +10,7 @@
 
 | 作品 | チーム・担当者 | 開発環境 |
 | --- | --- | --- |
-| 植物育成ゲーム『窓辺の庭』<br/>창가의 정원 / WindowGarden<br/>iOS / Android向け | Team.Garden・3人チーム<br/>ユ・キヒョン / 62String | Unity 6000.3.11f1 / C#<br/>uGUI・TextMeshPro<br/>Input System・Coroutine・JSON |
+| 植物育成ゲーム『窓辺の庭』<br/>창가의 정원 / WindowGarden<br/>iOS / Android向け | Team.Garden・3人チーム<br/>ユ・ギヒョン / 62String | Unity 6000.3.11f1 / C#<br/>uGUI・TextMeshPro<br/>Input System・Coroutine・JSON |
 
 ## 担当機能のつながり
 
