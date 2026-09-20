@@ -10,7 +10,7 @@
 
 | 作品 | チーム・担当者 | 開発環境 |
 | --- | --- | --- |
-| 植物育成ゲーム『窓辺の庭』<br/>창가의 정원 / WindowGarden<br/>iOS / Android向け | Team.Garden・3人チーム<br/>ユ・ギヒョン / 62String | Unity 6000.3.11f1 / C#<br/>uGUI・TextMeshPro<br/>Input System・Coroutine・JSON |
+| 植物育成ゲーム『窓辺の庭』<br/>창가의 정원 / WindowGarden<br/>iOS / Android向け | Team.Garden・3人チーム<br/>ユ・キヒョン / 62String | Unity 6000.3.11f1 / C#<br/>uGUI・TextMeshPro<br/>Input System・Coroutine・JSON |
 
 ## 担当機能のつながり
 
@@ -52,5 +52,10 @@ flowchart LR
 - **製品コード8ファイルの抜粋**です。共通マネージャー・シーン・Prefab・画像は含まないため、単体ではコンパイル・実行できません。
 - [初期実装・機能拡張の履歴とチームの後続修正](docs/Implementation_ja.md#contributions)を区別して記載しています。
 - 掲載基準は元プロジェクトのコミット `a8bde20`。保存安定化の追加実装はまだ含めていません。
-- 実機画面と開発期間は確認後に追記します。公開前にチーム内でコード・素材の公開範囲を確認します。
 - 再利用を許諾するライセンスは設定していません。
+
+## 開発期間
+
+**2026年6月17日～2026年9月8日（本人のコミット記録に基づく期間）**
+
+元プロジェクトの `yoogihyun` / `62String` 名義のコミット履歴を基準としています。作品全体の開発終了日を示すものではありません。
