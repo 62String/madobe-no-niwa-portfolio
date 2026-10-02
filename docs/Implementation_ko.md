@@ -1,6 +1,6 @@
 [日本語](Implementation_ja.md) | [한국어](Implementation_ko.md)
 
-# 窓辺の庭 | 담당 기능 구현 해설
+# 창가의 정원 | 담당 기능 구현 해설
 
 [README로 돌아가기](../README.ko.md)
 

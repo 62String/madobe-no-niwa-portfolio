@@ -12,7 +12,7 @@
 
 | 작품 | 팀·담당자 | 개발 환경 |
 | --- | --- | --- |
-| 식물 육성 게임 『窓辺の庭』<br/>창가의 정원 / WindowGarden<br/>iOS / Android 대상 | Team.Garden·3인 팀<br/>ユ・ギヒョン / 62String | Unity 6000.3.11f1 / C#<br/>uGUI·TextMeshPro<br/>Input System·Coroutine·JSON |
+| 식물 육성 게임 『窓辺の庭』<br/>창가의 정원 / WindowGarden<br/>iOS / Android 대상 | Team.Garden·3인 팀<br/>유기현 / 62String | Unity 6000.3.11f1 / C#<br/>uGUI·TextMeshPro<br/>Input System·Coroutine·JSON |
 
 ## 담당 기능의 연결 관계
 
