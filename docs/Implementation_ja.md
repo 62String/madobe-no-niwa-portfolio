@@ -1,3 +1,5 @@
+[日本語](Implementation_ja.md) | [한국어](Implementation_ko.md)
+
 # 窓辺の庭 | 担当機能の実装解説
 
 [READMEへ戻る](../README.md)
